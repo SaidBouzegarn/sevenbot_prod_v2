@@ -1,0 +1,32 @@
+# Ignore logs folder
+app/logs/
+
+# Ignore .env file
+.env
+app/backend/.env
+
+# Ignore virtual environment folder
+venv/
+
+.streamlit/secrets.toml
+app/.streamlit/secrets.toml
+# Python-specific ignores
+__pycache__/
+*.py[cod]
+*$py.class
+
+# OS-specific ignores
+.DS_Store
+Thumbs.db
+
+# Key pair files
+*.key
+*.pem   
+SevenBlueBots.pem
+
+# IDE-specific ignores (optional, uncomment if needed)
+# .vscode/
+# .idea/
+
+
+sevenbluebots.zip
