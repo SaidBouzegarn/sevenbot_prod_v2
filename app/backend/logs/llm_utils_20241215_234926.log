@@ -1,0 +1,78 @@
+2024-12-15 23:49:29,812 - llm_utils - INFO - Starting login URL detection
+2024-12-15 23:49:30,732 - llm_utils - INFO - looking for login url in Your task is to analyze a list of URLs from a website's landing page and identify the login page URL. Please follow these guidelines:
+
+1. Look for URLs containing keywords related to authentication such as:
+   - "login", "signin", "sign-in", "auth", "account"
+   - Common variations like "log-in", "log_in", etc.
+
+2. Consider URL patterns typical of login pages:
+   - Short paths (/login, /signin)
+   - Location in URL structure (often top-level)
+   - Authentication-related parameters
+
+3. Analyze the full URL structure:
+   - Path indicates user authentication purpose
+   - Avoid similar but unrelated pages (e.g. "login-help")
+
+Input URLs:
+
+
+Please analyze carefully to avoid bot honeypots:
+- Avoid overly simple URLs like "example.com/login" that don't match the site's domain
+- Prefer login URLs that include the actual website domain (e.g. "website.com/auth/login")
+- Look for login pages that follow the site's established URL patterns
+- Be suspicious of login endpoints that seem disconnected from the main domain
+- Consider if the URL structure matches other authenticated sections of the site
+- If a login URL is found: Return only that single URL as a string
+- If no login URL is found: Return one string containing "None"
+
+Do not provide any additional commentary or explanation.
+2024-12-15 23:49:30,733 - llm_utils - INFO - Login URL detected: login_url='https://example.com/user/login'
+2024-12-15 23:49:31,696 - llm_utils - INFO - Starting CSS selector detection
+2024-12-15 23:49:33,127 - llm_utils - INFO - looking for css selectors in Your task is to analyze the cleaned HTML of a login page and identify the CSS selectors for the username field, password field, and login submit button. Please follow these guidelines:
+
+1. Examine the HTML structure to locate the login form elements:
+   - Look for input fields that could be used for username or email
+   - Look for input fields that appear to be for password entry
+   - Look for buttons or input elements that seem to submit the login form
+
+2. Identify unique selectors for each element:
+   - Use IDs, class names, name attributes, or combinations of attributes
+   - Ensure the selectors are as precise as possible to avoid conflicts
+   - Be prepared for non-standard naming conventions
+
+3. Consider various possibilities for login elements:
+   - Username fields might use terms like "username", "email", "user", "login", etc.
+   - Password fields might use "password", "pwd", "pass", etc.
+   - Submit buttons could be labeled with "login", "sign in", "submit", "go", etc.
+
+4. Look beyond conventional naming:
+   - Be aware that some websites may use arbitrary or obfuscated names for these elements
+   - Pay attention to the context and position of elements within the form structure
+
+Input HTML:
+<!DOCTYPE html>
+<html>
+<body>
+<div>
+<h1>Example Domain</h1>
+<p>This domain is for use in illustrative...</p>
+<p><a href="https://www.iana.org/domains/example">More information...</a></p>
+</div>
+</body></html>
+
+Please provide the CSS selectors in the following format:
+{
+    "username_selector": "CSS selector for username/email field",
+    "password_selector": "CSS selector for password field",
+    "submit_button_selector": "CSS selector for login submit button",
+    "comment": string # small comment on how provided html can be cleaned more to facilitate task and reduce token usage. [no more than 5 sentences]
+}
+
+Ensure that each selector is unique and correctly identifies the intended element. If multiple potential selectors exist for an element, choose the most specific and reliable option. Do not provide any additional commentary or explanation.
+2024-12-15 23:49:33,128 - llm_utils - INFO - CSS selectors detected successfully : username_selector='' password_selector='' submit_button_selector='' comment='The provided HTML does not contain any form elements related to login functionality. To facilitate the task, ensure the HTML includes a form with input fields for username and password, and a submit button. This will allow for accurate identification of the necessary CSS selectors. Additionally, removing unrelated content can help focus on the relevant elements.'
+2024-12-15 23:49:34,782 - llm_utils - INFO - Starting URL selection process
+2024-12-15 23:49:45,926 - llm_utils - INFO - Successfully selected 21 URLs
+2024-12-15 23:49:45,951 - llm_utils - INFO - Starting article classification and extraction
+2024-12-15 23:49:49,513 - llm_utils - INFO - Page classified as non-article
+2024-12-15 23:49:50,232 - llm_utils - INFO - Starting article classification and extraction

@@ -10,7 +10,6 @@ from jinja2 import Environment, FileSystemLoader
 import os
 from app.backend.utils.utils import extract_content, clean_html_for_login_detection
 from app.backend.utils.llm_utils import select_likely_URLS, detect_login_url, detect_selectors, classify_and_extract_news_article
-import sqlite3
 from datetime import datetime
 from collections import deque
 from urllib.parse import urlparse
@@ -322,9 +321,7 @@ class NewsScrapper:
         Returns:
             set: Set of tuples containing (url, is_article)
         """
-        # If RDS engine is not available, fall back to SQLite
-        if not self.rds_engine:
-            return self._get_visited_urls_sqlite()
+  
 
         try:
             with self.rds_engine.connect() as conn:
@@ -354,93 +351,59 @@ class NewsScrapper:
         
         except Exception as e:
             print(f"Error retrieving visited URLs from PostgreSQL: {e}")
-            # Fallback to SQLite if PostgreSQL fails
-            return self._get_visited_urls_sqlite()
 
-    def _get_visited_urls_sqlite(self):
-        """
-        Fallback method to retrieve visited URLs from SQLite
-        """
-        conn = sqlite3.connect(self.db_path)
-        c = conn.cursor()
-        c.execute('SELECT url, is_article FROM visited_urls WHERE domain = ?', (self.domain,))
-        urls = {(row[0], row[1]) for row in c.fetchall()}
-        conn.close()
-        return urls
-
+ 
     def add_visited_urls(self, url_tuples):
         """
         Add multiple URLs to the visited database
-        Supports both PostgreSQL and SQLite
+        Supports PostgreSQL 
         """
         if not url_tuples:
             return
-        
-        # Try PostgreSQL first
-        if self.rds_engine:
-            try:
-                with self.rds_engine.connect() as conn:
-                    # Create table if not exists (same as in get_visited_urls)
-                    create_table_sql = """
-                    CREATE TABLE IF NOT EXISTS visited_urls (
-                        url TEXT,
-                        domain TEXT,
-                        visit_date TIMESTAMP,
-                        is_article BOOLEAN,
-                        PRIMARY KEY (url, domain)
-                    )
-                    """
-                    conn.execute(text(create_table_sql))
+    
 
-                    # Prepare data for batch insert
-                    now = datetime.now()
-                    insert_sql = text("""
-                        INSERT INTO visited_urls (url, domain, visit_date, is_article)
-                        VALUES (:url, :domain, :visit_date, :is_article)
-                        ON CONFLICT (url, domain) DO NOTHING
-                    """)
-                    
-                    # Batch insert
-                    batch_data = [
-                        {
-                            'url': url, 
-                            'domain': self.domain, 
-                            'visit_date': now, 
-                            'is_article': is_article
-                        } for url, is_article in url_tuples
-                    ]
-                    
-                    conn.execute(insert_sql, batch_data)
-                    conn.commit()
-                    return
-            
-            except Exception as e:
-                print(f"Error adding visited URLs to PostgreSQL: {e}")
-        
-        # Fallback to SQLite if PostgreSQL fails
-        conn = sqlite3.connect(self.db_path)
-        c = conn.cursor()
-        
-        # Prepare data for batch insert
-        now = datetime.now()
-        data = [(url, self.domain, now, is_article) for url, is_article in url_tuples]
-        
         try:
-            c.executemany('''INSERT OR IGNORE INTO visited_urls 
-                            (url, domain, visit_date, is_article) 
-                            VALUES (?, ?, ?, ?)''', data)
-            conn.commit()
-        except sqlite3.Error as e:
-            print(f"Database error: {e}")
-        finally:
-            conn.close()
+            with self.rds_engine.connect() as conn:
+                # Create table if not exists (same as in get_visited_urls)
+                create_table_sql = """
+                CREATE TABLE IF NOT EXISTS visited_urls (
+                    url TEXT,
+                    domain TEXT,
+                    visit_date TIMESTAMP,
+                    is_article BOOLEAN,
+                    PRIMARY KEY (url, domain)
+                )
+                """
+                conn.execute(text(create_table_sql))
 
+                # Prepare data for batch insert
+                now = datetime.now()
+                insert_sql = text("""
+                    INSERT INTO visited_urls (url, domain, visit_date, is_article)
+                    VALUES (:url, :domain, :visit_date, :is_article)
+                    ON CONFLICT (url, domain) DO NOTHING
+                """)
+                
+                # Batch insert
+                batch_data = [
+                    {
+                        'url': url, 
+                        'domain': self.domain, 
+                        'visit_date': now, 
+                        'is_article': is_article
+                    } for url, is_article in url_tuples
+                ]
+                
+                conn.execute(insert_sql, batch_data)
+                conn.commit()
+                return
+        
+        except Exception as e:
+            print(f"Error adding visited URLs to PostgreSQL: {e}")
+    
     def _initialize_database(self):
         """Initialize the database and create necessary tables if they don't exist."""
-        if not self.rds_engine:
-            # Fallback to SQLite if RDS is not available
-            return self._initialize_sqlite_database()
-        
+
         try:
             with self.rds_engine.connect() as conn:
                 # Create visited_urls table
@@ -477,215 +440,96 @@ class NewsScrapper:
         
         except Exception as e:
             print(f"Error initializing PostgreSQL database: {e}")
-            # Fallback to SQLite if PostgreSQL initialization fails
-            return self._initialize_sqlite_database()
 
-    def _initialize_sqlite_database(self):
-        """Fallback method to initialize SQLite database."""
-        conn = sqlite3.connect(self.db_path)
-        c = conn.cursor()
-        try:
-            # Check if tables exist
-            c.execute("""SELECT name FROM sqlite_master 
-                        WHERE type='table' 
-                        AND name IN ('visited_urls', 'websites')""")
-            existing_tables = {row[0] for row in c.fetchall()}
-            
-            # Only create tables that don't exist
-            if 'visited_urls' not in existing_tables:
-                c.execute('''CREATE TABLE visited_urls
-                            (url TEXT PRIMARY KEY,
-                             domain TEXT,
-                             visit_date TIMESTAMP,
-                             is_article BOOLEAN)''')
-            
-            if 'websites' not in existing_tables:
-                c.execute('''CREATE TABLE websites
-                            (url TEXT PRIMARY KEY,
-                             login_url TEXT,
-                             username TEXT,
-                             password TEXT,
-                             username_selector TEXT,
-                             password_selector TEXT,
-                             submit_button_selector TEXT)''')
-            
-            conn.commit()
-        except sqlite3.Error as e:
-            print(f"Database initialization error: {e}")
-        finally:
-            conn.close()
 
     def add_website(self):
         """Add or update a website's credentials and selectors in the database."""
         # Extract base domain from website_url
         base_domain = self._extract_domain(self.website_url)
         
-        # Use RDS if available, otherwise fall back to SQLite
-        if self.rds_engine:
-            try:
-                with self.rds_engine.connect() as conn:
-                    # Check if website exists
-                    check_query = text("""
-                        SELECT * FROM websites WHERE url = :domain
-                    """)
-                    existing = conn.execute(check_query, {'domain': base_domain}).fetchone()
-                    
-                    if existing:
-                        # Update existing record, only updating non-None values
-                        update_query = text("""
-                            UPDATE websites 
-                            SET 
-                                login_url = COALESCE(:login_url, login_url),
-                                username = COALESCE(:username, username),
-                                password = COALESCE(:password, password),
-                                username_selector = COALESCE(:username_selector, username_selector),
-                                password_selector = COALESCE(:password_selector, password_selector),
-                                submit_button_selector = COALESCE(:submit_button_selector, submit_button_selector),
-                                last_updated = CURRENT_TIMESTAMP
-                            WHERE url = :domain
-                        """)
-                        
-                        conn.execute(update_query, {
-                            'domain': base_domain,
-                            'login_url': self.login_url,
-                            'username': self.username,
-                            'password': self.password,
-                            'username_selector': self.username_selector,
-                            'password_selector': self.password_selector,
-                            'submit_button_selector': self.submit_button_selector
-                        })
-                    else:
-                        # Insert new record
-                        insert_query = text("""
-                            INSERT INTO websites 
-                            (url, login_url, username, password, 
-                             username_selector, password_selector, submit_button_selector)
-                            VALUES 
-                            (:domain, :login_url, :username, :password, 
-                             :username_selector, :password_selector, :submit_button_selector)
-                        """)
-                        
-                        conn.execute(insert_query, {
-                            'domain': base_domain,
-                            'login_url': self.login_url,
-                            'username': self.username,
-                            'password': self.password,
-                            'username_selector': self.username_selector,
-                            'password_selector': self.password_selector,
-                            'submit_button_selector': self.submit_button_selector
-                        })
-                    
-                    conn.commit()
-                    print(f"Website {base_domain} added/updated in PostgreSQL")
-            
-            except Exception as e:
-                print(f"Error adding/updating website in PostgreSQL: {e}")
-                # Fallback to SQLite method
-                return self._add_website_sqlite(base_domain)
-        
-        else:
-            # Fallback to SQLite if RDS is not available
-            return self._add_website_sqlite(base_domain)
 
-    def _add_website_sqlite(self, base_domain):
-        """Fallback method to add website to SQLite database."""
-        conn = sqlite3.connect(self.db_path)
-        c = conn.cursor()
-        
-        try:
-            # Check if website exists and get current values
-            c.execute('SELECT * FROM websites WHERE url = ?', (base_domain,))
-            existing = c.fetchone()
+        with self.rds_engine.connect() as conn:
+            # Check if website exists
+            check_query = text("""
+                SELECT * FROM websites WHERE url = :domain
+            """)
+            existing = conn.execute(check_query, {'domain': base_domain}).fetchone()
             
             if existing:
                 # Update existing record, only updating non-None values
-                update_columns = []
-                update_values = []
+                update_query = text("""
+                    UPDATE websites 
+                    SET 
+                        login_url = COALESCE(:login_url, login_url),
+                        username = COALESCE(:username, username),
+                        password = COALESCE(:password, password),
+                        username_selector = COALESCE(:username_selector, username_selector),
+                        password_selector = COALESCE(:password_selector, password_selector),
+                        submit_button_selector = COALESCE(:submit_button_selector, submit_button_selector),
+                        last_updated = CURRENT_TIMESTAMP
+                    WHERE url = :domain
+                """)
                 
-                # Define update logic for each column
-                columns_to_update = [
-                    ('login_url', self.login_url),
-                    ('username', self.username),
-                    ('password', self.password),
-                    ('username_selector', self.username_selector),
-                    ('password_selector', self.password_selector),
-                    ('submit_button_selector', self.submit_button_selector)
-                ]
-                
-                for col, new_value in columns_to_update:
-                    if new_value is not None:
-                        update_columns.append(f"{col} = ?")
-                        update_values.append(new_value)
-                
-                if update_columns:
-                    update_query = f"UPDATE websites SET {', '.join(update_columns)} WHERE url = ?"
-                    update_values.append(base_domain)
-                    c.execute(update_query, update_values)
+                conn.execute(update_query, {
+                    'domain': base_domain,
+                    'login_url': self.login_url,
+                    'username': self.username,
+                    'password': self.password,
+                    'username_selector': self.username_selector,
+                    'password_selector': self.password_selector,
+                    'submit_button_selector': self.submit_button_selector
+                })
             else:
                 # Insert new record
-                c.execute('''INSERT INTO websites 
-                            (url, login_url, username, password, 
-                             username_selector, password_selector, submit_button_selector)
-                            VALUES (?, ?, ?, ?, ?, ?, ?)''',
-                            (base_domain, self.login_url, self.username, self.password,
-                             self.username_selector, self.password_selector, self.submit_button_selector))
+                insert_query = text("""
+                    INSERT INTO websites 
+                    (url, login_url, username, password, 
+                    username_selector, password_selector, submit_button_selector)
+                    VALUES 
+                    (:domain, :login_url, :username, :password, 
+                    :username_selector, :password_selector, :submit_button_selector)
+                """)
+                
+                conn.execute(insert_query, {
+                    'domain': base_domain,
+                    'login_url': self.login_url,
+                    'username': self.username,
+                    'password': self.password,
+                    'username_selector': self.username_selector,
+                    'password_selector': self.password_selector,
+                    'submit_button_selector': self.submit_button_selector
+                })
             
             conn.commit()
-            print(f"Website {base_domain} added/updated in SQLite")
-        
-        except sqlite3.Error as e:
-            print(f"SQLite database error: {e}")
-        
-        finally:
-            conn.close()
+            print(f"Website {base_domain} added/updated in PostgreSQL")
+
+    
 
     def _get_stored_domain_info(self):
         """Fetch stored domain information from database."""
         # Try PostgreSQL first
-        if self.rds_engine:
-            try:
-                with self.rds_engine.connect() as conn:
-                    base_domain = self._extract_domain(self.website_url)
-                    query = text("""
-                        SELECT * FROM websites WHERE url = :domain
-                    """)
-                    result = conn.execute(query, {'domain': base_domain}).fetchone()
-                    
-                    if result:
-                        # Convert result to dictionary
-                        columns = ['url', 'login_url', 'username', 'password', 
-                                   'username_selector', 'password_selector', 'submit_button_selector']
-                        stored_values = dict(zip(columns, result))
-                        
-                        # Update attributes only if not already set
-                        self._update_attributes_from_stored_values(stored_values)
-                        return True
-                return False
-            
-            except Exception as e:
-                print(f"Error retrieving domain info from PostgreSQL: {e}")
-        
-        # Fallback to SQLite
-        conn = sqlite3.connect(self.db_path)
-        c = conn.cursor()
         try:
-            base_domain = self._extract_domain(self.website_url)
-            c.execute('SELECT * FROM websites WHERE url = ?', (base_domain,))
-            row = c.fetchone()
-            
-            if row:
-                # Map database columns to instance attributes
-                columns = ['url', 'login_url', 'username', 'password', 
-                           'username_selector', 'password_selector', 'submit_button_selector']
-                stored_values = dict(zip(columns, row))
+            with self.rds_engine.connect() as conn:
+                base_domain = self._extract_domain(self.website_url)
+                query = text("""
+                    SELECT * FROM websites WHERE url = :domain
+                """)
+                result = conn.execute(query, {'domain': base_domain}).fetchone()
                 
-                # Update attributes only if not already set
-                self._update_attributes_from_stored_values(stored_values)
-                return True
+                if result:
+                    # Convert result to dictionary
+                    columns = ['url', 'login_url', 'username', 'password', 
+                                'username_selector', 'password_selector', 'submit_button_selector']
+                    stored_values = dict(zip(columns, result))
+                    
+                    # Update attributes only if not already set
+                    self._update_attributes_from_stored_values(stored_values)
+                    return True
             return False
         
-        finally:
-            conn.close()
+        except Exception as e:
+            print(f"Error retrieving domain info from PostgreSQL: {e}")
+
 
     def _update_attributes_from_stored_values(self, stored_values):
         """Helper method to update attributes from stored values."""
@@ -736,10 +580,6 @@ class NewsScrapper:
             # Retrieve RDS credentials from AWS Secrets Manager
             secret_name = "rds!db-ed1bf464-b0d0-4041-8c9c-5604be36e2fe"
             rds_credentials = self._get_aws_secret(secret_name)
-
-            if not rds_credentials:
-                print("Falling back to SQLite due to RDS connection failure")
-                return None
 
             # RDS Connection Details
             rds_host = "sevenbots.c9w2g0i8kg7w.eu-west-3.rds.amazonaws.com"
