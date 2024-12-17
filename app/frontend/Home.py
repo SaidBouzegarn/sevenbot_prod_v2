@@ -1,11 +1,9 @@
 import streamlit as st
 import os
 from dotenv import load_dotenv
-from pages.Simulation import render_start_page
 import PyPDF2
 from pathlib import Path
 import hmac
-from pages.CrawlandScrape import render_crawl_page
 import logging
 from datetime import datetime
 

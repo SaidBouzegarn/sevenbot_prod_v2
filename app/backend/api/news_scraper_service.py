@@ -27,7 +27,7 @@ app = FastAPI()
 async def scrape_website(config: ScraperConfig, background_tasks: BackgroundTasks):
     try:
         # Convert Pydantic model to dictionary for NewsScrapper
-        scraper_config = config.dict()
+        scraper_config = config.model_dump()
         
         # Initialize scraper
         scraper = NewsScrapper(**scraper_config)
@@ -57,7 +57,3 @@ async def scrape_website(config: ScraperConfig, background_tasks: BackgroundTask
     except Exception as e:
         logger.error(f"Scraping error: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
-
-@app.on_event("shutdown")
-def shutdown_event():
-    logger.info("Application is shutting down")
